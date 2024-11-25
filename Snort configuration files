@@ -1,0 +1,97 @@
+
+### **1. Port Scan Detection (SYN Scan)**
+This rule will trigger an alert if a SYN scan is detected on your network, which is often used by attackers to discover open ports.
+
+```bash
+alert tcp $EXTERNAL_NET any -> $HOME_NET 80 (msg:"Port Scan Detected - SYN Scan"; flags:S,12; threshold:type threshold, track by_src, count 5, seconds 60; sid:1000001;)
+```
+- **Explanation**: This rule looks for TCP packets from external IP addresses with the SYN flag set (a common characteristic of a port scan). The `threshold` setting triggers an alert when there are 5 SYN packets within 60 seconds from the same source IP.
+
+### **2. HTTP Request Containing "malicious" Keyword**
+This rule detects HTTP requests that contain a specific string (e.g., "malicious") which could indicate a web attack, such as an attempt to exploit a vulnerable web application.
+
+```bash
+alert tcp $EXTERNAL_NET any -> $HOME_NET 80 (msg:"Suspicious HTTP Request - Potential Malware"; content:"/malicious"; sid:1000002;)
+```
+- **Explanation**: This rule alerts on HTTP requests that contain the string `/malicious`, which could be part of an exploit attempt, or access to a known malicious file.
+
+### **3. SQL Injection Attempt in HTTP Traffic**
+Detects possible SQL injection attempts by searching for typical SQL keywords in HTTP request bodies.
+
+```bash
+alert tcp $EXTERNAL_NET any -> $HOME_NET 80 (msg:"SQL Injection Attempt - Potential Attack"; content:"union select"; nocase; sid:1000003;)
+```
+- **Explanation**: This rule triggers an alert if the content of an HTTP request contains the string "union select", which is often used in SQL injection attacks to manipulate SQL queries.
+
+### **4. ICMP Flood (DoS Attack)**
+Detects high volumes of ICMP (ping) packets, which could indicate a Denial of Service (DoS) attack, particularly an ICMP flood.
+
+```bash
+alert icmp $EXTERNAL_NET any -> $HOME_NET any (msg:"Potential DoS Attack - ICMP Flood"; itype:8; threshold:type threshold, track by_src, count 50, seconds 10; sid:1000004;)
+```
+- **Explanation**: This rule monitors ICMP traffic (ping requests) and triggers an alert if more than 50 ICMP Echo Request packets are received from a single source within 10 seconds, which could be indicative of an ICMP flood attack.
+
+### **5. SSH Brute-Force Attack**
+This rule detects brute-force attempts to log into SSH services by matching patterns in the traffic.
+
+```bash
+alert tcp $EXTERNAL_NET any -> $HOME_NET 22 (msg:"SSH Brute-Force Attack"; flow:to_server,established; content:"root"; pcre:"/root.*password/"; sid:1000005;)
+```
+- **Explanation**: This rule looks for SSH login attempts where the username "root" is paired with common brute-force login keywords like "password". This pattern is typical in brute-force attacks where attackers try common passwords for SSH login.
+
+### **6. SMB/NetSession Enumeration**
+This rule detects attempts to enumerate shares or users on SMB (Server Message Block) services, which is a common technique used in network reconnaissance.
+
+```bash
+alert tcp $EXTERNAL_NET any -> $HOME_NET 445 (msg:"SMB Enumeration Attempt"; content:"|ff|SMB"; flags:S; threshold:type threshold, track by_src, count 3, seconds 60; sid:1000006;)
+```
+- **Explanation**: This rule detects multiple attempts to establish SMB sessions on port 445 (typically used for SMB traffic) and triggers an alert if there are 3 or more attempts in 60 seconds, suggesting potential enumeration of SMB services.
+
+### **7. DNS Tunnel Detection**
+Detects possible DNS tunneling activity, where malicious data is being exfiltrated or used for command-and-control purposes through DNS queries.
+
+```bash
+alert udp $EXTERNAL_NET any -> $HOME_NET 53 (msg:"DNS Tunnel Detection"; content:"|00 00 29 10|"; sid:1000007;)
+```
+- **Explanation**: DNS tunneling often involves sending non-DNS traffic over port 53. This rule looks for unusual DNS query patterns (specific bytes like `|00 00 29 10|`), which could be indicative of DNS tunneling.
+
+### **8. FTP Brute Force Attack**
+Detects potential brute-force attacks on FTP servers, where multiple incorrect login attempts occur in a short time period.
+
+```bash
+alert tcp $EXTERNAL_NET any -> $HOME_NET 21 (msg:"FTP Brute-Force Attack"; flow:to_server,established; content:"USER"; pcre:"/USER.*anonymous/"; sid:1000008;)
+```
+- **Explanation**: This rule looks for multiple FTP login attempts containing the string "anonymous", which is common in brute-force attacks where attackers try to use anonymous FTP login credentials.
+
+### **9. Detection of a Known Malware Signature in HTTP Traffic**
+This rule looks for traffic patterns associated with a known malware signature or exploit.
+
+```bash
+alert tcp $EXTERNAL_NET any -> $HOME_NET 80 (msg:"Known Malware Signature Detected in HTTP"; content:"malware_signature_xyz"; sid:1000009;)
+```
+- **Explanation**: This rule matches a known malware signature (`malware_signature_xyz`) in HTTP traffic. The string could be part of a payload, command, or other artifact used by malware.
+
+### **10. SMBv1 Exploit Attempt**
+Detects attempts to exploit known vulnerabilities in the SMBv1 protocol, such as the EternalBlue exploit.
+
+```bash
+alert tcp $EXTERNAL_NET any -> $HOME_NET 445 (msg:"SMBv1 Exploit Attempt - EternalBlue"; flow:to_server,established; content:"|F0 9A A0 00 00 00 00 00 00 00 00 00 00 00 00|"; sid:1000010;)
+```
+- **Explanation**: This rule looks for the specific exploit signature used in the **EternalBlue** vulnerability (MS17-010) in SMBv1 traffic. The content hex pattern (`|F0 9A A0 00 ...|`) is unique to this exploit.
+
+---
+
+### **Tips for Writing Custom Snort Rules:**
+1. **Rule Structure**: Each Snort rule has a standard structure: 
+   - **Action** (alert, log, pass, etc.)
+   - **Protocol** (tcp, udp, icmp, etc.)
+   - **Source/Destination** (IP addresses, ports)
+   - **Rule Options** (e.g., msg, content, pcre)
+   
+2. **Alert Severity**: Consider adding `priority` to your rules to indicate the severity of the threat (e.g., `priority:1;` for high severity).
+
+3. **Thresholds**: Use the `threshold` option to reduce false positives by controlling how many times an event should occur before triggering an alert.
+
+4. **Testing**: After writing custom rules, use tools like **Nmap** or **Metasploit** to simulate the attacks you're detecting to verify that your rules trigger correctly.
+
+5. **Performance Considerations**: Avoid overly broad content matches in production environments, as they can slow down performance. Instead, use more specific patterns or regular expressions (e.g., `pcre`).
