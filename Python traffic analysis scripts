@@ -1,0 +1,185 @@
+
+### **1. Analyzing Snort Logs for Specific Alerts and Blocking IPs**
+
+This script reads Snort alert logs and automatically blocks IPs involved in suspicious activity (like a port scan or DoS attack).
+
+```python
+import os
+import re
+
+# Path to Snort log file
+snort_log_path = "/var/log/snort/alert"
+
+# Regular expression to identify port scan alerts
+port_scan_pattern = re.compile(r"(\d+\.\d+\.\d+\.\d+).*Port Scan Detected")
+
+# Function to block an IP using iptables
+def block_ip(ip):
+    os.system(f"iptables -A INPUT -s {ip} -j DROP")
+    print(f"IP {ip} has been blocked.")
+
+# Function to analyze Snort logs for port scans
+def analyze_snort_logs():
+    with open(snort_log_path, "r") as log_file:
+        for line in log_file:
+            match = port_scan_pattern.search(line)
+            if match:
+                ip = match.group(1)
+                block_ip(ip)
+
+# Run the log analysis
+analyze_snort_logs()
+```
+
+**Explanation**:
+- The script looks through Snort’s alert logs for port scan alerts (based on custom Snort rules).
+- If a port scan is detected, it uses `iptables` to block the attacking IP.
+
+### **2. Packet Capture and Analysis Using Scapy**
+
+This script captures packets using Scapy and analyzes them in real-time for specific patterns, such as detecting SYN floods (a type of DoS attack).
+
+```python
+from scapy.all import *
+
+# List of IPs to block
+blocked_ips = set()
+
+# Function to analyze packets
+def analyze_packet(pkt):
+    if pkt.haslayer(TCP):
+        # Detect SYN flood attack by checking for SYN packets without ACK flag
+        if pkt[TCP].flags == "S":
+            ip_src = pkt[IP].src
+            print(f"Detected SYN packet from: {ip_src}")
+            
+            # Check if we have already blocked this IP (basic threshold of 5 SYN packets)
+            if ip_src not in blocked_ips:
+                blocked_ips.add(ip_src)
+                print(f"Blocking IP: {ip_src}")
+                # Here we could execute a command to block this IP, like with iptables
+
+# Start sniffing packets
+sniff(prn=analyze_packet, store=0)
+```
+
+**Explanation**:
+- This script uses Scapy to sniff TCP packets and detects SYN packets that could indicate a **SYN flood DoS attack**.
+- When a SYN packet is detected, it logs the source IP. If the same IP sends multiple SYN packets, it adds it to the block list and you could extend it to block this IP using firewall commands (e.g., `iptables`).
+
+### **3. Traffic Volume Analysis (Detecting Network Scanning)**
+
+This script detects unusual levels of traffic between certain source and destination IPs, which could indicate a network scan (e.g., Nmap scan).
+
+```python
+from scapy.all import *
+from collections import defaultdict
+
+# Dictionary to store traffic count between IPs
+traffic_counts = defaultdict(int)
+
+# Function to analyze packets
+def analyze_packet(pkt):
+    if pkt.haslayer(IP):
+        src_ip = pkt[IP].src
+        dst_ip = pkt[IP].dst
+        traffic_counts[(src_ip, dst_ip)] += 1
+        
+        # Threshold for unusual traffic (e.g., more than 50 packets)
+        if traffic_counts[(src_ip, dst_ip)] > 50:
+            print(f"Unusual traffic detected between {src_ip} and {dst_ip}. Count: {traffic_counts[(src_ip, dst_ip)]}")
+            # Here you could implement automated response or alert
+
+# Start sniffing
+sniff(prn=analyze_packet, store=0)
+```
+
+**Explanation**:
+- This script captures and analyzes network traffic between source and destination IP addresses.
+- If the traffic count between a pair of IPs exceeds a threshold (e.g., 50 packets), it triggers an alert indicating unusual traffic, which could be indicative of a network scan.
+
+### **4. HTTP Traffic Analysis for Malware or Suspicious Requests**
+
+This script checks for suspicious HTTP requests in network traffic. It could be used to detect malware communication or attacks based on certain HTTP patterns.
+
+```python
+from scapy.all import *
+import re
+
+# Suspicious URL pattern (e.g., signs of command-and-control traffic)
+malicious_pattern = re.compile(r"\/malicious|\/exploit")
+
+# Function to analyze HTTP packets
+def analyze_http_packet(pkt):
+    if pkt.haslayer(TCP) and pkt.haslayer(Raw):
+        # Check if the packet contains HTTP data
+        raw_data = pkt[Raw].load.decode(errors='ignore')
+        
+        # Look for suspicious patterns in the HTTP request
+        if "HTTP" in raw_data and malicious_pattern.search(raw_data):
+            print(f"Suspicious HTTP Request Detected: {raw_data}")
+            # Optionally, you can trigger an alert or block the source IP
+
+# Start sniffing HTTP packets on port 80 (HTTP traffic)
+sniff(filter="tcp port 80", prn=analyze_http_packet, store=0)
+```
+
+**Explanation**:
+- The script captures HTTP traffic on port 80 and looks for patterns in the HTTP request, such as `/malicious` or `/exploit`.
+- If any suspicious patterns are found, the script prints an alert. You can further customize the script to block the IP or log the event.
+
+### **5. DNS Query Traffic Analysis (Detecting DNS Tunneling)**
+
+This script analyzes DNS traffic and looks for suspicious patterns, like unusually long domain names, which might indicate **DNS tunneling**.
+
+```python
+from scapy.all import *
+
+# Function to analyze DNS queries for unusual patterns
+def analyze_dns_packet(pkt):
+    if pkt.haslayer(DNS) and pkt.getlayer(DNS).qr == 0:  # DNS query (not response)
+        domain_name = pkt[DNS].qd.qname.decode(errors='ignore')
+        # Check for unusually long domain names (potential DNS tunneling)
+        if len(domain_name) > 50:
+            print(f"Suspicious DNS Query Detected: {domain_name}")
+
+# Start sniffing DNS queries (port 53)
+sniff(filter="udp port 53", prn=analyze_dns_packet, store=0)
+```
+
+**Explanation**:
+- This script captures DNS queries and checks for unusually long domain names (a common technique used in DNS tunneling).
+- If it detects a suspiciously long domain name, it prints an alert.
+
+### **6. Real-Time Traffic Analysis with Wireshark PCAP Files**
+
+This Python script analyzes a **Wireshark (PCAP) capture** for specific patterns like port scans or suspicious packets. It uses the `pyshark` library to read PCAP files.
+
+```python
+import pyshark
+
+# Path to the pcap file
+pcap_file = "network_capture.pcap"
+
+# Function to analyze packets
+def analyze_pcap():
+    capture = pyshark.FileCapture(pcap_file)
+    for pkt in capture:
+        if 'IP' in pkt:
+            src_ip = pkt.ip.src
+            dst_ip = pkt.ip.dst
+            print(f"Packet from {src_ip} to {dst_ip}")
+            # Example: Detecting if traffic between two IPs exceeds a threshold
+            if int(pkt.length) > 1500:
+                print(f"Suspicious packet detected between {src_ip} and {dst_ip}. Size: {pkt.length}")
+
+# Run the pcap analysis
+analyze_pcap()
+```
+
+**Explanation**:
+- This script uses **pyshark**, a Python wrapper for Wireshark, to read a **PCAP file**.
+- It analyzes each packet for certain characteristics, such as detecting large packets (potential signs of an attack) and prints the relevant alerts.
+
+
+
